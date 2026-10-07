@@ -2,15 +2,15 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "app.automessage/mcp",
   "title": "autoMessage",
-  "description": "Send and read iMessages from your own Mac and Apple ID — drafts, history and contacts.",
-  "version": "0.2.0",
+  "description": "Send and read iMessages from your own Mac and Apple ID \u2014 drafts, history and contacts.",
+  "version": "0.2.1",
   "websiteUrl": "https://automessage.app",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@stockmandigital/automessage-mcp",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "transport": {
         "type": "stdio"
       },

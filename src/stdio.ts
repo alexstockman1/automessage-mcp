@@ -15,7 +15,7 @@ async function main() {
     await server.connect(transport);
     // stderr-only logging to avoid corrupting the JSON-RPC stream on stdout.
     process.stderr.write(
-        `automessage-mcp v0.2.0 connected via stdio (baseUrl=${cfg.baseUrl})\n`,
+        `automessage-mcp v0.2.1 connected via stdio (baseUrl=${cfg.baseUrl})\n`,
     );
 }
 
