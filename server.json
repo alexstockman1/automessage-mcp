@@ -1,0 +1,41 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "app.automessage/mcp",
+  "title": "autoMessage",
+  "description": "Send and read iMessages from your own Mac and Apple ID — drafts, history and contacts.",
+  "version": "0.2.0",
+  "websiteUrl": "https://automessage.app",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@stockmandigital/automessage-mcp",
+      "version": "0.2.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "AUTOMESSAGE_API_KEY",
+          "description": "Your autoMessage API key, from the dashboard at go.automessage.app. Use a read-only key to expose history without send access.",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "AUTOMESSAGE_API_URL",
+          "description": "Override the API base URL. Defaults to the hosted autoMessage API."
+        },
+        {
+          "name": "AUTOMESSAGE_READ_ONLY",
+          "description": "Set to 1 to hide and block the send, cancel and create-contact tools. Pair with a read-only API key for server-side enforcement."
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://automessage-mcp-tfsfyvwypq-uc.a.run.app"
+    }
+  ]
+}
