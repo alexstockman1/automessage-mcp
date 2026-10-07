@@ -137,7 +137,7 @@ export function createMcpHttpApp(opts: McpHttpOptions = {}): McpHttpApp {
             endpoint: '/mcp',
             auth: 'X-API-KEY header or Authorization: Bearer <key> — forwarded to the autoMessage REST API. Keys are never accepted in the URL.',
             readOnly,
-            docs: 'https://github.com/stockmandigital/automessage',
+            docs: 'https://github.com/alexstockman1/automessage-mcp',
         });
     });
 

@@ -47,9 +47,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/stockmandigital/automessage"
+    "url": "git+https://github.com/alexstockman1/automessage-mcp.git"
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "homepage": "https://automessage.app",
+  "bugs": {
+    "url": "https://github.com/alexstockman1/automessage-mcp/issues"
+  },
+  "author": "Stockman Digital, LLC"
 }
