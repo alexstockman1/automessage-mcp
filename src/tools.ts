@@ -106,7 +106,7 @@ export const TOOLS: Tool[] = [
                 },
                 cursor: {
                     type: 'string',
-                    description: 'ISO-8601 sentDate cursor from a previous page response. Returns messages older than this date.',
+                    description: 'Opaque pagination cursor: pass pagination.nextCursor from the previous page verbatim. Returns the next (older) page.',
                 },
                 direction: {
                     type: 'string',
@@ -137,7 +137,7 @@ export const TOOLS: Tool[] = [
                 },
                 cursor: {
                     type: 'string',
-                    description: 'ISO-8601 sentDate cursor from a previous page response.',
+                    description: 'Opaque pagination cursor: pass pagination.nextCursor from the previous page verbatim.',
                 },
                 direction: {
                     type: 'string',

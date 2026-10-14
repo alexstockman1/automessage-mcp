@@ -32,7 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildServer } from './server.js';
 
-export const MCP_HTTP_VERSION = '0.2.1';
+export const MCP_HTTP_VERSION = '0.2.2';
 const DEFAULT_BASE_URL = process.env.AUTOMESSAGE_API_URL ?? 'https://api.automessage.app';
 
 export interface McpHttpOptions {
