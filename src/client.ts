@@ -106,7 +106,9 @@ export class AutoMessageClient {
     // ---- Drafts (the write surface) ------------------------------------
 
     sendMessage(args: {
-        to: string;
+        /** Exactly one of `to` / `conversationId` (2026-10-15: group sends). */
+        to?: string;
+        conversationId?: string;
         body: string;
         responseWebhook?: { url: string; events?: string[]; expiresAfter?: string };
     }): Promise<{ data: unknown; meta?: unknown }> {
@@ -132,6 +134,11 @@ export class AutoMessageClient {
 
     cancelDraft(id: string): Promise<void> {
         return this.request('DELETE', `/v1/drafts/${encodeURIComponent(id)}`);
+    }
+
+    /** POST /v1/conversations/:id/read (2026-10-15). */
+    markConversationRead(id: string): Promise<{ data: unknown }> {
+        return this.request('POST', `/v1/conversations/${encodeURIComponent(id)}/read`);
     }
 
     // ---- Messages (read-only) ------------------------------------------

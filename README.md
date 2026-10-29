@@ -8,12 +8,13 @@ Under the hood, this server is a thin shim over autoMessage's REST API. Every to
 
 | Tool | Purpose |
 |---|---|
-| `send_imessage` | Queue an outbound iMessage to a phone number or email. Returns a draft id. If the new-outreach limit (rolling 24h) is reached the message is still accepted and held (`meta.queued.resumesAt` = earliest time a slot frees). |
+| `send_imessage` | Queue an outbound iMessage to a phone number or email (`to`), or into an existing conversation (`conversation_id` from `list_conversations` — the only way to reply in a **group chat**; 0.2.3). Returns a draft id. If the new-outreach limit (rolling 24h) is reached the message is still accepted and held (`meta.queued.resumesAt` = earliest time a slot frees); a reply into an existing group never counts against it. |
 | `list_conversations` | List the user's iMessage conversations, newest first. |
 | `get_conversation_history` | Read message history for a specific conversation. |
 | `list_drafts` | Read pending / sent / failed drafts. |
 | `get_draft_status` | Check a draft's lifecycle `status` (queued / sending / held / blocked / sent / failed / cancelled) and any `hold` reason. |
 | `cancel_pending_draft` | Cancel a queued draft before the Mac connector dispatches it. |
+| `mark_conversation_read` | Mark a conversation's unread received messages as read (badge clears; with "Mark read on Mac" on, the Mac opens the thread so the read receipt goes out over iMessage). 0.2.3. |
 | `list_contacts` | List the user's saved iMessage contacts. |
 | `find_contact` | Substring search across contacts (name / phone / email). |
 | `create_contact` | Create or upsert a contact. |

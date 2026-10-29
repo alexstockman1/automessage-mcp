@@ -1,6 +1,6 @@
 {
   "name": "@stockmandigital/automessage-mcp",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "mcpName": "app.automessage/mcp",
   "description": "MCP server for autoMessage \u2014 gives Claude, Codex, and any MCP client the ability to send iMessages, read conversation history, manage drafts, and resolve contacts via the autoMessage REST API.",
   "license": "MIT",

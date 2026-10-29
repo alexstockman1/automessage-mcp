@@ -32,7 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildServer } from './server.js';
 
-export const MCP_HTTP_VERSION = '0.2.2';
+export const MCP_HTTP_VERSION = '0.2.3';
 const DEFAULT_BASE_URL = process.env.AUTOMESSAGE_API_URL ?? 'https://api.automessage.app';
 
 export interface McpHttpOptions {
@@ -122,7 +122,10 @@ export function createMcpHttpApp(opts: McpHttpOptions = {}): McpHttpApp {
             }),
         );
     }
-    app.use(express.json({ limit: '512kb' }));
+    // SEC-016 (2026-10-28): no client sends a compressed body; `inflate: false`
+    // turns a `Content-Encoding` request into a 415 instead of a parser path that
+    // could crash the process (body-parser GHSA-27r3-jxmh-p828).
+    app.use(express.json({ limit: '512kb', inflate: false }));
 
     // Liveness for Cloud Run.
     app.get('/health', (_req, res) => {
@@ -260,6 +263,11 @@ export function createMcpHttpApp(opts: McpHttpOptions = {}): McpHttpApp {
         }
         if (err.type === 'entity.too.large') {
             res.status(413).json({ error: { code: 'payload_too_large', message: 'Request body exceeds the size limit.' } });
+            return;
+        }
+        // SEC-016: `inflate: false` turns a compressed body into this error.
+        if (err.type === 'encoding.unsupported') {
+            res.status(415).json({ error: { code: 'unsupported_media_type', message: 'Unsupported request encoding.' } });
             return;
         }
         const status = typeof err.status === 'number' && err.status >= 400 && err.status < 500 ? err.status : 500;

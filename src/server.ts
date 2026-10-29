@@ -29,7 +29,7 @@ export function buildServer(cfg: ServerConfig): Server {
     const server = new Server(
         {
             name: 'automessage',
-            version: '0.2.2',
+            version: '0.2.3',
         },
         {
             capabilities: {

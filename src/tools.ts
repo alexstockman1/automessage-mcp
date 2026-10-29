@@ -9,20 +9,24 @@ import { type Tool } from '@modelcontextprotocol/sdk/types.js';
 import { AutoMessageClient, ApiError } from './client.js';
 
 /** Tools that change state or send messages — hidden/blocked in read-only mode. */
-export const WRITE_TOOLS: ReadonlySet<string> = new Set(['send_imessage', 'cancel_pending_draft', 'create_contact']);
+export const WRITE_TOOLS: ReadonlySet<string> = new Set(['send_imessage', 'cancel_pending_draft', 'create_contact', 'mark_conversation_read']);
 
 export const TOOLS: Tool[] = [
     {
         name: 'send_imessage',
         description:
-            'Send an iMessage from the user\'s Mac. Creates a draft that the user\'s Mac agent picks up and dispatches via Messages.app. Returns the draft id; use get_draft_status to confirm delivery. The recipient must be a valid phone number in E.164 format (+14155551234) or an email address that the recipient uses for iMessage. If the user\'s new-outreach limit is reached (N unreplied conversations messaged in a rolling 24-hour window), the message is STILL ACCEPTED and queued: the response carries meta.queued (reason, limit, used, resumesAt = earliest moment a slot frees) and the draft\'s status is "held" until earlier sends age out of the window or the user raises the limit in Settings — tell the user it is queued, not failed. A 403 recipient_opted_out means the recipient texted STOP: do not retry.',
+            'Send an iMessage from the user\'s Mac. Creates a draft that the user\'s Mac agent picks up and dispatches via Messages.app. Returns the draft id; use get_draft_status to confirm delivery. Address it with EXACTLY ONE of `to` (a valid phone number in E.164 format, +14155551234, or an email address the recipient uses for iMessage) or `conversation_id` (an existing conversation from list_conversations — the ONLY way to reply in a GROUP chat; a 1:1 thread resolves to its recipient). If one of the user\'s outreach limits is reached — `outreach_limit_reached` (new conversations started in a rolling 24-hour window) or `unreplied_limit_reached` (conversations started in the last 7 days that nobody has replied to yet) — the message is STILL ACCEPTED and queued: the response carries meta.queued (reason, limit, used, resumesAt = the moment a slot frees on its own) and the draft\'s status is "held" until a slot frees (an older conversation ages out of the window, someone replies) or the user raises the limit in Settings — tell the user it is queued, not failed. Both limits apply only to a message that would START a 1:1 conversation; replies and follow-ups into existing conversations, and any reply into a group, are never held by them. A 403 recipient_opted_out means the recipient texted STOP: do not retry.',
         inputSchema: {
             type: 'object',
-            required: ['to', 'body'],
+            required: ['body'],
             properties: {
                 to: {
                     type: 'string',
-                    description: 'Recipient phone (E.164, e.g. "+14155551234") or email address.',
+                    description: 'Recipient phone (E.164, e.g. "+14155551234") or email address. Omit when using conversation_id.',
+                },
+                conversation_id: {
+                    type: 'string',
+                    description: 'Send into an existing conversation (its `id` from list_conversations) — required for group chats. Omit when using `to`.',
                 },
                 body: {
                     type: 'string',
@@ -158,7 +162,7 @@ export const TOOLS: Tool[] = [
     {
         name: 'list_drafts',
         description:
-            'List outbound drafts. Useful for checking what\'s queued for the Mac agent, what is held by the new-outreach limit, what was recently sent, or what failed. By default returns drafts in any state; filter with status (preferred), or sent / send_error.',
+            'List outbound drafts. Useful for checking what\'s queued for the Mac agent, what is held by an outreach limit (see `hold.reason`), what was recently sent, or what failed. By default returns drafts in any state; filter with status (preferred), or sent / send_error.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -177,7 +181,7 @@ export const TOOLS: Tool[] = [
     {
         name: 'get_draft_status',
         description:
-            'Read a single draft. Use this after send_imessage to confirm the message was delivered. The response includes `status` — queued (waiting for the Mac), sending, held (parked by the new-outreach limit — rolling 24h window; resumes automatically as earlier sends age out or when the user raises the limit — NOT a failure), blocked (`hold.reason`: subscription_required or recipient_opted_out; never auto-retried), sent, cancelled, failed — plus `hold` (reason/since/message), `sent`, `sendError` (failed/cancelled only), and `sentMessage` (Firestore doc path of the dispatched message).',
+            'Read a single draft. Use this after send_imessage to confirm the message was delivered. The response includes `status` — queued (waiting for the Mac), sending, held (parked by the Mac — `hold.reason` says why: `outreach_limit_reached` / `unreplied_limit_reached` are the user\'s two outreach limits and resume on their own as slots free or when the user raises them; `warming_up` means the Mac\'s Messages history is still thin so new conversations per day are capped for now (the ceiling rises on its own); `target_lookup_failed` means the Mac was offline and retries; `send_paused`, `thread_delivery_failing`, `follow_up_limit`, `awaiting_first_message`, `identical_message_limit` and `quiet_hours` likewise clear by themselves or from the dashboard — NOT a failure), blocked (`hold.reason`: subscription_required or recipient_opted_out; never auto-retried), sent, cancelled, failed — plus `hold` (reason/since/message), `sent`, `sendError` (failed/cancelled only), and `sentMessage` (Firestore doc path of the dispatched message).',
         inputSchema: {
             type: 'object',
             required: ['draft_id'],
@@ -195,6 +199,18 @@ export const TOOLS: Tool[] = [
             required: ['draft_id'],
             properties: {
                 draft_id: { type: 'string', description: 'Draft id to cancel.' },
+            },
+        },
+    },
+    {
+        name: 'mark_conversation_read',
+        description:
+            'Mark every unread received message in a conversation as read (the user\'s dashboard badge clears at once). Reading a thread with get_conversation_history does NOT mark it read — only call this when the user asks to mark something read. If the user enabled "Mark read on Mac" in autoMessage, their Mac also opens the thread in Messages.app so the read receipt is sent over iMessage; the result\'s `macSync` is "requested" or "off". Returns { conversationId, markedRead, unreadCount, macSync }.',
+        inputSchema: {
+            type: 'object',
+            required: ['conversation_id'],
+            properties: {
+                conversation_id: { type: 'string', description: 'Conversation id (from list_conversations).' },
             },
         },
     },
@@ -258,9 +274,19 @@ export async function callTool(client: AutoMessageClient, name: string, args: Re
                             : {}),
                     }
                     : undefined;
+                // A missing / non-string body used to be coerced with String()
+                // and sent as the literal text "undefined" — the API saw a
+                // non-empty string and queued it (mcp-fuzz, 2026-10-16).
+                const body = args['body'];
+                if (typeof body !== 'string' || body.trim().length === 0) {
+                    throw new Error('`body` is required and must be a non-empty string.');
+                }
                 const res = await client.sendMessage({
-                    to: String(args['to']),
-                    body: String(args['body']),
+                    ...(typeof args['to'] === 'string' && args['to'] ? { to: args['to'] } : {}),
+                    ...(typeof args['conversation_id'] === 'string' && args['conversation_id']
+                        ? { conversationId: args['conversation_id'] }
+                        : {}),
+                    body,
                     ...(webhook ? { responseWebhook: webhook } : {}),
                 });
                 return res;
