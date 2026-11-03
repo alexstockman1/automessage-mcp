@@ -330,6 +330,14 @@ export async function callTool(client: AutoMessageClient, name: string, args: Re
                 });
             case 'get_draft_status':
                 return await client.getDraft(String(args['draft_id']));
+            case 'mark_conversation_read': {
+                // Advertised since 0.2.3 but never dispatched — every call fell
+                // to the default "Unknown tool" error (test-growth 2026-10-22,
+                // nightly gate ×10). 0.2.4 fixes it.
+                const id = typeof args['conversation_id'] === 'string' ? args['conversation_id'].trim() : '';
+                if (!id) throw new Error('`conversation_id` is required.');
+                return await client.markConversationRead(id);
+            }
             case 'cancel_pending_draft':
                 await client.cancelDraft(String(args['draft_id']));
                 return { cancelled: true };
