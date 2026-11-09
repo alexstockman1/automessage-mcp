@@ -31,8 +31,9 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildServer } from './server.js';
+import { AutoMessageClient, ApiError } from './client.js';
 
-export const MCP_HTTP_VERSION = '0.2.4';
+export const MCP_HTTP_VERSION = '0.2.5';
 const DEFAULT_BASE_URL = process.env.AUTOMESSAGE_API_URL ?? 'https://api.automessage.app';
 
 export interface McpHttpOptions {
@@ -40,6 +41,14 @@ export interface McpHttpOptions {
     baseUrl?: string;
     /** Max concurrent sessions before LRU eviction (env MCP_MAX_SESSIONS, default 500). */
     maxSessions?: number;
+    /**
+     * Max concurrent sessions PER API KEY before that key's least recently
+     * used session is evicted (env MCP_MAX_SESSIONS_PER_KEY, default 20).
+     * SEC-030 (2026-11-09): one key — or, before the mint-time check below,
+     * one anonymous caller — could fill the whole map and evict every other
+     * tenant's live session.
+     */
+    maxSessionsPerKey?: number;
     /** Idle TTL per session (default 30 min). */
     sessionTtlMs?: number;
     /** Per-IP limiters (default on; tests turn them off). */
@@ -86,6 +95,7 @@ const NEED_KEY = 'Provide your API key via the X-API-KEY header or an Authorizat
 export function createMcpHttpApp(opts: McpHttpOptions = {}): McpHttpApp {
     const baseUrl = opts.baseUrl ?? DEFAULT_BASE_URL;
     const maxSessions = opts.maxSessions ?? Number.parseInt(process.env.MCP_MAX_SESSIONS ?? '500', 10);
+    const maxSessionsPerKey = opts.maxSessionsPerKey ?? Number.parseInt(process.env.MCP_MAX_SESSIONS_PER_KEY ?? '20', 10);
     const sessionTtlMs = opts.sessionTtlMs ?? 30 * 60_000;
     const limiters = opts.rateLimit ?? true;
     const readOnly = opts.readOnly ?? process.env.AUTOMESSAGE_READ_ONLY === '1';
@@ -183,6 +193,46 @@ export function createMcpHttpApp(opts: McpHttpOptions = {}): McpHttpApp {
         return entry;
     }
 
+    /** Least recently used session id among `candidates` (all sessions when omitted). */
+    function lruSessionId(candidates?: Buffer): string | undefined {
+        let oldestId: string | undefined;
+        let oldest = Number.POSITIVE_INFINITY;
+        for (const [id, e] of sessions) {
+            if (candidates && (candidates.length !== e.keyHash.length || !timingSafeEqual(candidates, e.keyHash))) continue;
+            if (e.lastUse < oldest) { oldest = e.lastUse; oldestId = id; }
+        }
+        return oldestId;
+    }
+
+    /**
+     * SEC-030 (2026-11-09): prove the key before minting a session. Until now
+     * the transport accepted ANY non-empty key and found out on the first
+     * tool call — so an anonymous caller could mint sessions until the LRU
+     * cap evicted every real tenant's session, and the failed-auth limiter
+     * never saw it (an `initialize` with a bad key was an HTTP 200). One
+     * `GET /v1/status` per NEW session: 401 → HTTP 401 here (counted by the
+     * failed limiter), nothing minted; the API unreachable → 503, nothing
+     * minted (a session that could never work is not worth holding).
+     */
+    async function keyAccepted(apiKey: string, res: Response): Promise<boolean> {
+        try {
+            await new AutoMessageClient({ baseUrl, apiKey }).getStatus();
+            return true;
+        } catch (err) {
+            if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+                unauthorized(res, 'The autoMessage API rejected this API key.');
+                return false;
+            }
+            if (err instanceof ApiError && err.status === 429) {
+                res.status(429).json({ error: { code: 'rate_limited', message: 'The autoMessage API is rate limiting this client — retry shortly.' } });
+                return false;
+            }
+            console.error('mcp key check failed', err instanceof ApiError ? `${err.status} ${err.code}` : (err as Error).message);
+            res.status(503).json({ error: { code: 'upstream_unavailable', message: 'Could not reach the autoMessage API to verify the key — retry shortly.' } });
+            return false;
+        }
+    }
+
     app.post('/mcp', async (req: Request, res: Response) => {
         try {
             const apiKey = keyFromRequest(req);
@@ -191,19 +241,27 @@ export function createMcpHttpApp(opts: McpHttpOptions = {}): McpHttpApp {
             let entry = resolveSession(req, res, apiKey);
             if (entry === null) return;                   // response already sent
             if (entry === undefined) {
+                if (!(await keyAccepted(apiKey, res))) return;   // response already sent
+                const keyHash = hashKey(apiKey);
+                // Per-key cap first: one key never evicts another tenant's session
+                // while it still holds `maxSessionsPerKey` of its own.
+                let mine = 0;
+                for (const e of sessions.values()) if (e.keyHash.length === keyHash.length && timingSafeEqual(e.keyHash, keyHash)) mine += 1;
+                if (mine >= maxSessionsPerKey) {
+                    const victim = lruSessionId(keyHash);
+                    if (victim) await closeSession(victim);
+                }
                 if (sessions.size >= maxSessions) {
                     // Evict the least recently used session rather than refusing.
-                    let oldestId: string | undefined;
-                    let oldest = Number.POSITIVE_INFINITY;
-                    for (const [id, e] of sessions) if (e.lastUse < oldest) { oldest = e.lastUse; oldestId = id; }
-                    if (oldestId) await closeSession(oldestId);
+                    const victim = lruSessionId();
+                    if (victim) await closeSession(victim);
                 }
                 const newId = randomUUID();               // never client-chosen
                 const server = buildServer({ baseUrl, apiKey, readOnly });
                 const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => newId });
                 await server.connect(transport);
                 const now = Date.now();
-                entry = { server, transport, keyHash: hashKey(apiKey), createdAt: now, lastSeen: now, lastUse: ++useCounter, timer: setTimeout(() => {}, 0) };
+                entry = { server, transport, keyHash, createdAt: now, lastSeen: now, lastUse: ++useCounter, timer: setTimeout(() => {}, 0) };
                 sessions.set(newId, entry);
                 armEviction(newId, entry);
             }
